@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package gw.v1;
+
+option go_package = "./gw";
+
+message CommandRequest {
+
+};
+
+message CommandResponse {
+
+};
+
+
+// This is the gateway service. The gateway is online when it sends a status response. It is offline whenever
+// the client disconencts *or* the keepalive message is dropped for 2x the interval.
+service GatewayService {
+    // This is the command stream from Span to the gateway. Commands are issued continuously and 
+    // acked in the response. Downstream messages are sent by Span and acked by the gateway. If it isn't acked
+    // it is resent. Upstream messages are sent by the gateway and acked by Span. If no ack is received the
+    // message is resent.
+    //
+    rpc CommandStream(stream CommandRequest) returns (stream CommandResponse);
+};
