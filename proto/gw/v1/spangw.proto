@@ -20,6 +20,5 @@ service GatewayService {
     // acked in the response. Downstream messages are sent by Span and acked by the gateway. If it isn't acked
     // it is resent. Upstream messages are sent by the gateway and acked by Span. If no ack is received the
     // message is resent.
-    //
     rpc CommandStream(stream CommandRequest) returns (stream CommandResponse);
 };
