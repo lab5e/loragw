@@ -1,0 +1,4 @@
+cmd/loragw/loragw
+*.crt
+*.key
+
