@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"math/big"
 	"os"
 	"sync"
 	"time"
@@ -187,7 +188,6 @@ func addDevice(deviceID string, config map[string]string, tags map[string]string
 
 func devicePayloadSender(sendCh chan *gateway.ControlRequest) {
 	for {
-		time.Sleep(1 * time.Second)
 
 		var ids []string
 		mutex.Lock()
@@ -207,6 +207,9 @@ func devicePayloadSender(sendCh chan *gateway.ControlRequest) {
 					},
 				},
 			}
+			// Introduce random offset
+			offset, _ := rand.Int(rand.Reader, big.NewInt(int64(time.Second)))
+			time.Sleep(time.Second + time.Duration(offset.Int64()))
 		}
 	}
 }
