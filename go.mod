@@ -5,6 +5,7 @@ go 1.19
 require (
 	github.com/alecthomas/kong v0.7.1
 	github.com/lab5e/l5log v0.0.11
+	github.com/lab5e/lospan v0.0.0-00010101000000-000000000000
 	github.com/lab5e/mofunk v0.0.17
 	github.com/lab5e/span v0.0.0-00010101000000-000000000000
 	google.golang.org/grpc v1.52.0
@@ -35,13 +36,13 @@ require (
 	github.com/miekg/dns v1.1.47 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20200410134404-eec4a21b6bb0 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
-	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
+	golang.org/x/mod v0.7.0 // indirect
 	golang.org/x/net v0.4.0 // indirect
 	golang.org/x/sys v0.3.0 // indirect
 	golang.org/x/text v0.5.0 // indirect
-	golang.org/x/tools v0.1.12 // indirect
+	golang.org/x/tools v0.4.0 // indirect
 	google.golang.org/genproto v0.0.0-20221207170731-23e4bf6bdc37 // indirect
-	google.golang.org/protobuf v1.28.1 // indirect
+	google.golang.org/protobuf v1.28.2-0.20220831092852-f930b1dc76e8 // indirect
 	lukechampine.com/uint128 v1.2.0 // indirect
 	modernc.org/cc/v3 v3.40.0 // indirect
 	modernc.org/ccgo/v3 v3.16.13 // indirect
@@ -55,3 +56,5 @@ require (
 )
 
 replace github.com/lab5e/span => ../span
+
+replace github.com/lab5e/lospan => ../lospan

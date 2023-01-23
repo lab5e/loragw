@@ -1,3 +1,4 @@
+bin/
 cmd/loragw/loragw
 *.crt
 *.key
