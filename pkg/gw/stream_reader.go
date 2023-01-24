@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -20,22 +21,22 @@ const loraClientTimeout = time.Second * 1
 // StreamProcessor reads and writes to and from a command stream from the Span service and keeps the LoRa
 // service in sync with the commands. The stream is closed when there's an error
 type StreamProcessor struct {
-	Stream        gateway.UserGateway_ControlStreamClient
-	Lora          lospan.LospanClient
-	sendChan      chan *gateway.ControlRequest
-	lastMessage   time.Time
-	deviceMapping map[string]string // map device id => eui
-	application   *lospan.Application
+	Stream          gateway.UserGateway_ControlStreamClient
+	Lora            lospan.LospanClient
+	sendChan        chan *gateway.ControlRequest
+	deviceMapping   map[string]string // map device id => eui
+	loraApplication *lospan.Application
+	closeUpstreamCh chan bool // Channel for upstream messages
 }
 
 // NewStreamProcessor creates a new stream processor
 func NewStreamProcessor(stream gateway.UserGateway_ControlStreamClient, lora lospan.LospanClient) *StreamProcessor {
 	return &StreamProcessor{
-		Stream:        stream,
-		Lora:          lora,
-		sendChan:      make(chan *gateway.ControlRequest),
-		lastMessage:   time.Now(),
-		deviceMapping: make(map[string]string),
+		Stream:          stream,
+		Lora:            lora,
+		sendChan:        make(chan *gateway.ControlRequest),
+		deviceMapping:   make(map[string]string),
+		closeUpstreamCh: make(chan bool, 1),
 	}
 }
 
@@ -43,6 +44,8 @@ func NewStreamProcessor(stream gateway.UserGateway_ControlStreamClient, lora los
 func (sp *StreamProcessor) Run() {
 	receiveCh := make(chan *gateway.ControlResponse)
 	errorCh := make(chan error)
+	lastMessage := time.Now()
+
 	go func() {
 		for msg := range sp.sendChan {
 			err := sp.Stream.Send(msg)
@@ -50,7 +53,7 @@ func (sp *StreamProcessor) Run() {
 				errorCh <- err
 				return
 			}
-			sp.lastMessage = time.Now()
+			lastMessage = time.Now()
 		}
 	}()
 
@@ -63,7 +66,7 @@ func (sp *StreamProcessor) Run() {
 				return
 			}
 			receiveCh <- msg
-			sp.lastMessage = time.Now()
+			lastMessage = time.Now()
 		}
 	}()
 
@@ -101,7 +104,7 @@ func (sp *StreamProcessor) Run() {
 
 		case <-time.After(10 * time.Second):
 			// Check for timeout, send keepalive if time is > keepAliveInterval
-			if time.Since(sp.lastMessage) > keepAliveInterval {
+			if time.Since(lastMessage) > keepAliveInterval {
 				sp.sendResponse(&gateway.ControlRequest{
 					Msg: &gateway.ControlRequest_Keepalive{},
 				})
@@ -130,7 +133,7 @@ func (sp *StreamProcessor) updateConfig(msg *gateway.GatewayConfigUpdate) {
 	defer done()
 
 	var err error
-	sp.application, err = sp.Lora.GetApplication(ctx, &lospan.GetApplicationRequest{
+	app, err := sp.Lora.GetApplication(ctx, &lospan.GetApplicationRequest{
 		Eui: appEUI,
 	})
 
@@ -140,25 +143,31 @@ func (sp *StreamProcessor) updateConfig(msg *gateway.GatewayConfigUpdate) {
 			createCtx, createDone := context.WithTimeout(context.Background(), loraClientTimeout)
 			defer createDone()
 			lg.Info("Application %s not found. Creating a new application", appEUI)
-			sp.application, err = sp.Lora.CreateApplication(createCtx, &lospan.CreateApplicationRequest{
+			app, err = sp.Lora.CreateApplication(createCtx, &lospan.CreateApplicationRequest{
 				Eui: &appEUI,
 			})
 			if err != nil {
 				lg.Error("Error creating application: %v", err)
 				return
 			}
-			lg.Info("Created application with EUI %s", sp.application.Eui)
+			lg.Info("Created application with EUI %s", appEUI)
+			sp.setLoraApplication(app)
 			return
 		}
 		lg.Error("Error retrieving application: %v", err)
 		return
 	}
-	lg.Info("Found application %s in LoRa server. No updates needed", sp.application.Eui)
+	lg.Info("Found application %s in LoRa server. No updates needed", app.Eui)
 }
 
 // updateDevice updates the device in the lora application.
 func (sp *StreamProcessor) updateDevice(msg *gateway.DeviceConfigUpdate) {
-	updatedDevice, err := sp.configToDevice(sp.application, msg.Config)
+	app := sp.getLoraApplication()
+	if app == nil {
+		lg.Error("No application is set. Ignoring device %s", msg.DeviceId)
+		return
+	}
+	updatedDevice, err := sp.configToDevice(app, msg.Config)
 	if err != nil {
 		lg.Error("Error converting config to device: %v", err)
 		return
@@ -180,7 +189,7 @@ func (sp *StreamProcessor) updateDevice(msg *gateway.DeviceConfigUpdate) {
 		}
 		existing = (err == nil)
 	}
-	updatedDevice.ApplicationEui = &sp.application.Eui
+	updatedDevice.ApplicationEui = &app.Eui
 	if !existing {
 		ctxCreate, doneCreate := context.WithTimeout(context.Background(), loraClientTimeout)
 		defer doneCreate()
@@ -191,10 +200,6 @@ func (sp *StreamProcessor) updateDevice(msg *gateway.DeviceConfigUpdate) {
 		}
 		sp.deviceMapping[msg.DeviceId] = *device.Eui
 		lg.Info("Created device %s (ID: %s) for application %s", *device.Eui, msg.DeviceId, *device.ApplicationEui)
-		return
-	}
-	if sp.application == nil {
-		lg.Error("No application exists yet. Can't create device")
 		return
 	}
 
@@ -298,4 +303,96 @@ func (sp *StreamProcessor) configToDevice(app *lospan.Application, cfg map[strin
 		ret.RelaxedCounter = &rc
 	}
 	return ret, nil
+}
+
+func (sp *StreamProcessor) getLoraApplication() *lospan.Application {
+	return sp.loraApplication
+}
+
+func (sp *StreamProcessor) setLoraApplication(app *lospan.Application) {
+	// Stop the old
+	sp.closeUpstreamCh <- true
+	oldCh := sp.closeUpstreamCh
+	sp.loraApplication = app
+	sp.closeUpstreamCh = make(chan bool, 1)
+	close(oldCh)
+	go sp.readUpstreamMessages()
+}
+
+// Read upstream channel messages and feed them into the gateway's
+func (sp *StreamProcessor) readUpstreamMessages() {
+	app := sp.getLoraApplication()
+	if app == nil {
+		lg.Error("Can't stream messages from nil application")
+		return
+	}
+	lg.Info("Starting upstream reader for application %s", app.Eui)
+	ctx := context.Background()
+	streamClient, err := sp.Lora.StreamMessages(ctx, &lospan.StreamMessagesRequest{
+		Eui: app.Eui,
+	})
+
+	if err != nil {
+		lg.Error("Error streaming upstream messages from application %s: %v", app.Eui, err)
+		return
+	}
+	upstreamCh := make(chan *lospan.UpstreamMessage)
+	defer close(upstreamCh)
+
+	defer streamClient.CloseSend()
+	go func() {
+		for {
+			msg, err := streamClient.Recv()
+			if err != nil {
+				lg.Warning("Error receiving upstream message. Exiting: %v", err)
+				return
+			}
+			upstreamCh <- msg
+		}
+	}()
+
+	for {
+		select {
+		case <-sp.closeUpstreamCh:
+			return
+		case msg := <-upstreamCh:
+			deviceId, err := sp.getIDForEUI(msg.Eui)
+			if err != nil {
+				lg.Warning("Uknown device EUI: %s. Ignoring upstream message (%+v)", msg.Eui, sp.deviceMapping)
+				continue
+			}
+			lg.Info("Send UpstreamMessage for device %s", deviceId)
+			sp.sendResponse(&gateway.ControlRequest{
+				Msg: &gateway.ControlRequest_UpstreamMessage{
+					UpstreamMessage: &gateway.UpstreamMessage{
+						DeviceId: deviceId,
+						Payload:  msg.Payload,
+						Metadata: sp.makeUpstreamMetadata(msg),
+					},
+				},
+			})
+			// TODO: Update device metadata. The frame counters for the device is updated and possibly
+			// the keys (if it's an OTAA device)
+		}
+	}
+}
+
+func (sp *StreamProcessor) makeUpstreamMetadata(msg *lospan.UpstreamMessage) map[string]string {
+	ret := make(map[string]string)
+	ret["gatewayEui"] = msg.GatewayEui
+	ret["rssi"] = strconv.FormatInt(int64(msg.Rssi), 10)
+	ret["snr"] = fmt.Sprintf("%3.2f", msg.Snr)
+	ret["frequency"] = fmt.Sprintf("%5.3f", msg.Snr)
+	ret["dataRate"] = msg.DataRate
+	ret["devAddr"] = strconv.FormatInt(int64(msg.DevAddr), 16)
+	return ret
+}
+
+func (sp *StreamProcessor) getIDForEUI(deviceEUI string) (string, error) {
+	for id, eui := range sp.deviceMapping {
+		if eui == deviceEUI {
+			return id, nil
+		}
+	}
+	return "", errors.New("not found")
 }
