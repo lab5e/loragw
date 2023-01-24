@@ -220,7 +220,26 @@ func (sp *StreamProcessor) removeDevice(msg *gateway.DeviceRemoved) {
 }
 
 func (sp *StreamProcessor) downstreamMessage(msg *gateway.DownstreamMessage) {
-	lg.Info("Downstream message")
+	ctx, done := context.WithTimeout(context.Background(), loraClientTimeout)
+	defer done()
+
+	eui, ok := sp.deviceMapping[msg.DeviceId]
+	if !ok {
+		lg.Error("Unknown device %s - ignoring downstream message", msg.DeviceId)
+		return
+	}
+	downMsg, err := sp.Lora.SendMessage(ctx, &lospan.DownstreamMessage{
+		Eui:     eui,
+		Payload: msg.Payload,
+		Port:    42,    // TODO: Allow port to be set via protocol
+		Ack:     false, // TODO: use ack flag for message
+	})
+	if err != nil {
+		lg.Error("Error sending downstream message to %s: %v", msg.DeviceId, err)
+		return
+	}
+
+	lg.Info("Sent downstream message to device %s ", downMsg.Eui)
 }
 
 func (sp *StreamProcessor) configToDevice(app *lospan.Application, cfg map[string]string) (*lospan.Device, error) {
