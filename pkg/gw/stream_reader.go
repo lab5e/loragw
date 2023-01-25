@@ -10,6 +10,7 @@ import (
 
 	"github.com/lab5e/lospan/pkg/lg"
 	"github.com/lab5e/lospan/pkg/pb/lospan"
+	"github.com/lab5e/span/pkg/gateways/usergw/gwconfig"
 	"github.com/lab5e/span/pkg/pb/gateway"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -123,7 +124,7 @@ func (sp *StreamProcessor) updateConfig(msg *gateway.GatewayConfigUpdate) {
 		lg.Error("Gateway configuration is empty")
 		return
 	}
-	appEUI, ok := msg.Config["appEui"]
+	appEUI, ok := msg.Config[gwconfig.LoraApplicationEUI]
 	if !ok {
 		lg.Error("Gateway config does not contain App EUI %+v", msg.Config)
 		return
@@ -245,11 +246,11 @@ func (sp *StreamProcessor) downstreamMessage(msg *gateway.DownstreamMessage) {
 func (sp *StreamProcessor) configToDevice(app *lospan.Application, cfg map[string]string) (*lospan.Device, error) {
 	lg.Debug("Config for device: %+v", cfg)
 	ret := &lospan.Device{}
-	devEUI, ok := cfg["devEui"]
+	devEUI, ok := cfg[gwconfig.LoraDeviceEUI]
 	if ok {
 		ret.Eui = &devEUI
 	}
-	state, ok := cfg["state"]
+	state, ok := cfg[gwconfig.LoraState]
 	if ok {
 		switch state {
 		case "otaa":
@@ -262,40 +263,43 @@ func (sp *StreamProcessor) configToDevice(app *lospan.Application, cfg map[strin
 			return nil, errors.New("unknown state for device")
 		}
 	}
-	devAddr, ok := cfg["devAddr"]
-	if ok && devAddr != "" {
-		intAddr, err := strconv.ParseInt(devAddr, 16, 32)
-		if err != nil {
-			return nil, errors.New("invalid devAddr format")
+
+	if ret.State == lospan.DeviceState_ABP.Enum() {
+		devAddr, ok := cfg[gwconfig.LoraDevAddr]
+		if ok && devAddr != "" {
+			intAddr, err := strconv.ParseInt(devAddr, 16, 32)
+			if err != nil {
+				return nil, errors.New("invalid devAddr format")
+			}
+			p := uint32(intAddr)
+			ret.DevAddr = &p
 		}
-		p := uint32(intAddr)
-		ret.DevAddr = &p
-	}
-	appKey, ok := cfg["appKey"]
-	if ok && appKey != "" {
-		buf, err := hex.DecodeString(appKey)
-		if err != nil {
-			return nil, errors.New("invalid format for appKey")
+		appKey, ok := cfg[gwconfig.LoraAppKey]
+		if ok && appKey != "" {
+			buf, err := hex.DecodeString(appKey)
+			if err != nil {
+				return nil, errors.New("invalid format for appKey")
+			}
+			ret.AppKey = buf
 		}
-		ret.AppKey = buf
-	}
-	appSKey, ok := cfg["appSKey"]
-	if ok && appSKey != "" {
-		buf, err := hex.DecodeString(appSKey)
-		if err != nil {
-			return nil, errors.New("invalid format for appSKey")
+		appSKey, ok := cfg[gwconfig.LoraAppSKey]
+		if ok && appSKey != "" {
+			buf, err := hex.DecodeString(appSKey)
+			if err != nil {
+				return nil, errors.New("invalid format for appSKey")
+			}
+			ret.AppSessionKey = buf
 		}
-		ret.AppSessionKey = buf
-	}
-	nwkSKey, ok := cfg["nwkSKey"]
-	if ok && nwkSKey != "" {
-		buf, err := hex.DecodeString(nwkSKey)
-		if err != nil {
-			return nil, errors.New("invalid format for nwkSKey")
+		nwkSKey, ok := cfg[gwconfig.LoraNwkSKey]
+		if ok && nwkSKey != "" {
+			buf, err := hex.DecodeString(nwkSKey)
+			if err != nil {
+				return nil, errors.New("invalid format for nwkSKey")
+			}
+			ret.NetworkSessionKey = buf
 		}
-		ret.NetworkSessionKey = buf
 	}
-	fcntUp, ok := cfg["fCntUp"]
+	fcntUp, ok := cfg[gwconfig.LoraFCntUp]
 	if ok && fcntUp != "" {
 		fup, err := strconv.ParseInt(fcntUp, 10, 32)
 		if err != nil {
@@ -304,7 +308,7 @@ func (sp *StreamProcessor) configToDevice(app *lospan.Application, cfg map[strin
 		p := int32(fup)
 		ret.FrameCountUp = &p
 	}
-	fcntDn, ok := cfg["fCntDn"]
+	fcntDn, ok := cfg[gwconfig.LoraFCntDn]
 	if ok && fcntDn != "" {
 		fdn, err := strconv.ParseInt(fcntDn, 10, 32)
 		if err != nil {
@@ -313,7 +317,7 @@ func (sp *StreamProcessor) configToDevice(app *lospan.Application, cfg map[strin
 		p := int32(fdn)
 		ret.FrameCountDown = &p
 	}
-	relaxedCounter, ok := cfg["relaxedCounter"]
+	relaxedCounter, ok := cfg[gwconfig.LoraRelaxedCounter]
 	if ok && relaxedCounter != "" {
 		rc := false
 		if relaxedCounter == "true" {
@@ -375,35 +379,79 @@ func (sp *StreamProcessor) readUpstreamMessages() {
 		case <-sp.closeUpstreamCh:
 			return
 		case msg := <-upstreamCh:
-			deviceId, err := sp.getIDForEUI(msg.Eui)
+			deviceID, err := sp.getIDForEUI(msg.Eui)
 			if err != nil {
 				lg.Warning("Uknown device EUI: %s. Ignoring upstream message (%+v)", msg.Eui, sp.deviceMapping)
 				continue
 			}
-			lg.Info("Send UpstreamMessage for device %s", deviceId)
+			lg.Info("Send UpstreamMessage for device %s", deviceID)
 			sp.sendResponse(&gateway.ControlRequest{
 				Msg: &gateway.ControlRequest_UpstreamMessage{
 					UpstreamMessage: &gateway.UpstreamMessage{
-						DeviceId: deviceId,
+						DeviceId: deviceID,
 						Payload:  msg.Payload,
 						Metadata: sp.makeUpstreamMetadata(msg),
 					},
 				},
 			})
-			// TODO: Update device metadata. The frame counters for the device is updated and possibly
-			// the keys (if it's an OTAA device)
+
+			updateInfo := &gateway.ControlRequest_DeviceUpdate{
+				DeviceUpdate: &gateway.DeviceUpdate{
+					DeviceId: deviceID,
+					Config:   make(map[string]string),
+					Metadata: make(map[string]string),
+				},
+			}
+
+			md := updateInfo.DeviceUpdate.Metadata
+			md[gwconfig.LoraRSSI] = strconv.FormatInt(int64(msg.Rssi), 10)
+			md[gwconfig.LoraSNR] = fmt.Sprintf("%3.2f", msg.Snr)
+			md[gwconfig.LoraFrequency] = fmt.Sprintf("%3.2f", msg.Frequency)
+			md[gwconfig.LoraDataRate] = msg.DataRate
+			md[gwconfig.LoraGatewayEUI] = msg.GatewayEui
+
+			loraDevice, err := sp.Lora.GetDevice(ctx, &lospan.GetDeviceRequest{
+				Eui: msg.Eui,
+			})
+			if err != nil {
+				lg.Warning("Got error retrieving device %s. Won't update config: %v", msg.Eui, err)
+				continue
+			}
+			cfg := updateInfo.DeviceUpdate.Config
+			cfg[gwconfig.LoraApplicationEUI] = *loraDevice.ApplicationEui
+			cfg[gwconfig.LoraDeviceEUI] = *loraDevice.Eui
+			cfg[gwconfig.LoraAppKey] = hex.EncodeToString(loraDevice.AppKey)
+			cfg[gwconfig.LoraAppSKey] = hex.EncodeToString(loraDevice.AppSessionKey)
+			cfg[gwconfig.LoraNwkSKey] = hex.EncodeToString(loraDevice.NetworkSessionKey)
+			if loraDevice.FrameCountDown != nil {
+				cfg[gwconfig.LoraFCntDn] = strconv.FormatInt(int64(*loraDevice.FrameCountDown), 10)
+			}
+			if loraDevice.FrameCountUp != nil {
+				cfg[gwconfig.LoraFCntUp] = strconv.FormatInt(int64(*loraDevice.FrameCountUp), 10)
+			}
+			if loraDevice.KeyWarning != nil {
+				if *loraDevice.KeyWarning {
+					cfg[gwconfig.LoraKeyWarning] = "true"
+				}
+			}
+			if loraDevice.DevAddr != nil {
+				cfg[gwconfig.LoraDevAddr] = strconv.FormatInt(int64(*loraDevice.DevAddr), 16)
+			}
+			sp.sendResponse(&gateway.ControlRequest{
+				Msg: updateInfo,
+			})
 		}
 	}
 }
 
 func (sp *StreamProcessor) makeUpstreamMetadata(msg *lospan.UpstreamMessage) map[string]string {
 	ret := make(map[string]string)
-	ret["gatewayEui"] = msg.GatewayEui
-	ret["rssi"] = strconv.FormatInt(int64(msg.Rssi), 10)
-	ret["snr"] = fmt.Sprintf("%3.2f", msg.Snr)
-	ret["frequency"] = fmt.Sprintf("%5.3f", msg.Snr)
-	ret["dataRate"] = msg.DataRate
-	ret["devAddr"] = strconv.FormatInt(int64(msg.DevAddr), 16)
+	ret[gwconfig.LoraGatewayEUI] = msg.GatewayEui
+	ret[gwconfig.LoraRSSI] = strconv.FormatInt(int64(msg.Rssi), 10)
+	ret[gwconfig.LoraSNR] = fmt.Sprintf("%3.2f", msg.Snr)
+	ret[gwconfig.LoraFrequency] = fmt.Sprintf("%5.3f", msg.Snr)
+	ret[gwconfig.LoraDataRate] = msg.DataRate
+	ret[gwconfig.LoraDevAddr] = strconv.FormatInt(int64(msg.DevAddr), 16)
 	return ret
 }
 
