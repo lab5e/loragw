@@ -1,3 +1,4 @@
+// Package main implements a lora gateway to Span
 package main
 
 import (
