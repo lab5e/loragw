@@ -168,20 +168,16 @@ func (sp *StreamProcessor) updateDevice(msg *gateway.DeviceConfigUpdate) {
 		lg.Error("No application is set. Ignoring device %s", msg.DeviceId)
 		return
 	}
-	updatedDevice, err := sp.configToDevice(app, msg.Config)
-	if err != nil {
-		lg.Error("Error converting config to device: %v", err)
-		return
-	}
+	var existingDevice *lospan.Device
 	existing := false
 	existingEui, ok := sp.deviceMapping[msg.DeviceId]
 	if ok {
 		// check if device exists in lora server
 		ctx, done := context.WithTimeout(context.Background(), loraClientTimeout)
 		defer done()
-
+		var err error
 		// if the EUI is omitted we must use the existing mapping.
-		_, err = sp.Lora.GetDevice(ctx, &lospan.GetDeviceRequest{
+		existingDevice, err = sp.Lora.GetDevice(ctx, &lospan.GetDeviceRequest{
 			Eui: existingEui,
 		})
 		if err != nil && status.Code(err) != codes.NotFound {
@@ -190,11 +186,21 @@ func (sp *StreamProcessor) updateDevice(msg *gateway.DeviceConfigUpdate) {
 		}
 		existing = (err == nil)
 	}
-	updatedDevice.ApplicationEui = &app.Eui
 	if !existing {
+		// Start with a blank device
+		existingDevice = &lospan.Device{}
+	}
+
+	if err := sp.configToDevice(app, existingDevice, msg.Config); err != nil {
+		lg.Error("Error converting config to device: %v", err)
+		return
+	}
+
+	if !existing {
+		existingDevice.ApplicationEui = &app.Eui
 		ctxCreate, doneCreate := context.WithTimeout(context.Background(), loraClientTimeout)
 		defer doneCreate()
-		device, err := sp.Lora.CreateDevice(ctxCreate, updatedDevice)
+		device, err := sp.Lora.CreateDevice(ctxCreate, existingDevice)
 		if err != nil {
 			lg.Error("Error creating device for ID %s: %v", msg.DeviceId, err)
 			return
@@ -204,10 +210,9 @@ func (sp *StreamProcessor) updateDevice(msg *gateway.DeviceConfigUpdate) {
 		return
 	}
 
-	updatedDevice.Eui = &existingEui
 	updateCtx, updateDone := context.WithTimeout(context.Background(), loraClientTimeout)
 	defer updateDone()
-	device, err := sp.Lora.UpdateDevice(updateCtx, updatedDevice)
+	device, err := sp.Lora.UpdateDevice(updateCtx, existingDevice)
 	if err != nil {
 		lg.Error("Error updating device %s: %v", msg.DeviceId, err)
 		return
@@ -217,7 +222,20 @@ func (sp *StreamProcessor) updateDevice(msg *gateway.DeviceConfigUpdate) {
 }
 
 func (sp *StreamProcessor) removeDevice(msg *gateway.DeviceRemoved) {
-	lg.Info("Remove device")
+	eui, ok := sp.deviceMapping[msg.DeviceId]
+	if !ok {
+		// no matching device
+		return
+	}
+	ctx, done := context.WithTimeout(context.Background(), loraClientTimeout)
+	defer done()
+
+	_, err := sp.Lora.DeleteDevice(ctx, &lospan.DeleteDeviceRequest{
+		Eui: eui,
+	})
+	if err != nil {
+		lg.Warning("Unable to remove device %s (id:%s) from LoRa service: %v", eui, msg.DeviceId, err)
+	}
 }
 
 func (sp *StreamProcessor) downstreamMessage(msg *gateway.DownstreamMessage) {
@@ -243,79 +261,79 @@ func (sp *StreamProcessor) downstreamMessage(msg *gateway.DownstreamMessage) {
 	lg.Info("Sent downstream message to device %s ", downMsg.Eui)
 }
 
-func (sp *StreamProcessor) configToDevice(app *lospan.Application, cfg map[string]string) (*lospan.Device, error) {
+func (sp *StreamProcessor) configToDevice(app *lospan.Application, device *lospan.Device, cfg map[string]string) error {
 	lg.Debug("Config for device: %+v", cfg)
-	ret := &lospan.Device{}
+
 	devEUI, ok := cfg[gwconfig.LoraDeviceEUI]
 	if ok {
-		ret.Eui = &devEUI
+		device.Eui = &devEUI
 	}
 	state, ok := cfg[gwconfig.LoraState]
 	if ok {
 		switch state {
 		case "otaa":
-			ret.State = lospan.DeviceState_OTAA.Enum()
+			device.State = lospan.DeviceState_OTAA.Enum()
 		case "abp":
-			ret.State = lospan.DeviceState_ABP.Enum()
+			device.State = lospan.DeviceState_ABP.Enum()
 		case "disabled":
-			ret.State = lospan.DeviceState_DISABLED.Enum()
+			device.State = lospan.DeviceState_DISABLED.Enum()
 		default:
-			return nil, errors.New("unknown state for device")
+			return errors.New("unknown state for device")
 		}
 	}
 
-	if ret.State == lospan.DeviceState_ABP.Enum() {
+	if device.State == lospan.DeviceState_ABP.Enum() {
 		devAddr, ok := cfg[gwconfig.LoraDevAddr]
 		if ok && devAddr != "" {
 			intAddr, err := strconv.ParseInt(devAddr, 16, 32)
 			if err != nil {
-				return nil, errors.New("invalid devAddr format")
+				return errors.New("invalid devAddr format")
 			}
 			p := uint32(intAddr)
-			ret.DevAddr = &p
+			device.DevAddr = &p
 		}
 		appKey, ok := cfg[gwconfig.LoraAppKey]
 		if ok && appKey != "" {
 			buf, err := hex.DecodeString(appKey)
 			if err != nil {
-				return nil, errors.New("invalid format for appKey")
+				return errors.New("invalid format for appKey")
 			}
-			ret.AppKey = buf
+			device.AppKey = buf
 		}
 		appSKey, ok := cfg[gwconfig.LoraAppSKey]
 		if ok && appSKey != "" {
 			buf, err := hex.DecodeString(appSKey)
 			if err != nil {
-				return nil, errors.New("invalid format for appSKey")
+				return errors.New("invalid format for appSKey")
 			}
-			ret.AppSessionKey = buf
+			device.AppSessionKey = buf
 		}
 		nwkSKey, ok := cfg[gwconfig.LoraNwkSKey]
 		if ok && nwkSKey != "" {
 			buf, err := hex.DecodeString(nwkSKey)
 			if err != nil {
-				return nil, errors.New("invalid format for nwkSKey")
+				return errors.New("invalid format for nwkSKey")
 			}
-			ret.NetworkSessionKey = buf
+			device.NetworkSessionKey = buf
 		}
 	}
 	fcntUp, ok := cfg[gwconfig.LoraFCntUp]
 	if ok && fcntUp != "" {
 		fup, err := strconv.ParseInt(fcntUp, 10, 32)
 		if err != nil {
-			return nil, errors.New("invalid fCntUp format")
+			return errors.New("invalid fCntUp format")
 		}
 		p := int32(fup)
-		ret.FrameCountUp = &p
+		device.FrameCountUp = &p
 	}
 	fcntDn, ok := cfg[gwconfig.LoraFCntDn]
 	if ok && fcntDn != "" {
 		fdn, err := strconv.ParseInt(fcntDn, 10, 32)
 		if err != nil {
-			return nil, errors.New("invalid fCntDn format")
+			return errors.New("invalid fCntDn format")
 		}
 		p := int32(fdn)
-		ret.FrameCountDown = &p
+		device.FrameCountDown = &p
 	}
 	relaxedCounter, ok := cfg[gwconfig.LoraRelaxedCounter]
 	if ok && relaxedCounter != "" {
@@ -323,9 +341,9 @@ func (sp *StreamProcessor) configToDevice(app *lospan.Application, cfg map[strin
 		if relaxedCounter == "true" {
 			rc = true
 		}
-		ret.RelaxedCounter = &rc
+		device.RelaxedCounter = &rc
 	}
-	return ret, nil
+	return nil
 }
 
 func (sp *StreamProcessor) getLoraApplication() *lospan.Application {
