@@ -26,3 +26,5 @@ cmd:
 tools: 
 	cat tools.go | grep _ | awk -F'"' '{print $$2}' | xargs -tI % go get %
 
+rpi:
+	cd cmd/loragw && GOOS=linux GOARCH=arm go build -o ../../bin/loragw.rpi
