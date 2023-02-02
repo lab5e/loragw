@@ -63,6 +63,8 @@ func (l *loraHandler) UpdateConfig(localID string, config map[string]string) (st
 		return "", errors.New("missing application EUI from configuration")
 	}
 
+	// TODO: Handle if local ID != appEUI (field has changed)
+
 	if localID == "" {
 		// This is a new application. Add it to the server
 		createCtx, createDone := context.WithTimeout(context.Background(), loraClientTimeout)
@@ -159,6 +161,7 @@ func (l *loraHandler) updateDevice(appEUI string, deviceEUI string, config map[s
 	if deviceEUI == "" {
 		return deviceEUI, nil, errors.New("device EUI not set; cant update")
 	}
+	// TODO: Handle when deviceEUI != config[eui] and appEUI != config[appeui] (recreate device, move device)
 	ctx, done := context.WithTimeout(context.Background(), loraClientTimeout)
 	defer done()
 
