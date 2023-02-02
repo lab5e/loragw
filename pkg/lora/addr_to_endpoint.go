@@ -1,15 +1,15 @@
-package gw
+package lora
 
 import (
 	"fmt"
 	"net"
 )
 
-// AddrToEndpoint converts a net.Addr (net.TCPAddr) into a port:host string
-func AddrToEndpoint(addr net.Addr) string {
+// addrToEndpoint converts a net.Addr (net.TCPAddr) into a port:host string
+func addrToEndpoint(addr net.Addr) string {
 	tcpAddr, ok := addr.(*net.TCPAddr)
 	if !ok {
-		panic("Not a tcp address for address")
+		panic(fmt.Sprintf("Not a tcp address for address: %T", addr))
 	}
 	if tcpAddr.IP.IsUnspecified() {
 		return fmt.Sprintf("127.0.0.1:%d", tcpAddr.Port)
