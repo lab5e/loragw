@@ -1,12 +1,6 @@
-.PHONY: all priv run vet test build cmd
+.PHONY: all run vet test build cmd
 
-ifeq ($(GOPRIVATE),)
-GOPRIVATE := github.com/lab5e/l5log
-endif
-all: vet priv build
-
-priv:
-	go env -w GOPRIVATE=$(GOPRIVATE)
+all: vet build
 
 run: build
 	bin/loragw --cert-file=clientcert.crt --chain=chain.crt --key-file=private.key

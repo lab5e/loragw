@@ -5,11 +5,11 @@ import (
 	"os"
 
 	"github.com/alecthomas/kong"
-	"github.com/lab5e/l5log/pkg/lg"
-	"github.com/lab5e/loragw/pkg/gw"
 	"github.com/lab5e/loragw/pkg/logger"
 	"github.com/lab5e/loragw/pkg/lora"
 	"github.com/lab5e/lospan/pkg/server"
+	"github.com/lab5e/spangw/pkg/gw"
+	"github.com/lab5e/spangw/pkg/lg"
 )
 
 type param struct {

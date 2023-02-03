@@ -1,10 +1,11 @@
 package logger
 
 import (
-	"github.com/lab5e/l5log/pkg/lg"
-	"github.com/lab5e/loragw/pkg/gw"
+	"github.com/lab5e/spangw/pkg/gw"
+	"github.com/lab5e/spangw/pkg/lg"
 )
 
+// New creates a new logging command handler
 func New(ch gw.CommandHandler) gw.CommandHandler {
 	return &logger{h: ch}
 }

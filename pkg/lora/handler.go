@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lab5e/l5log/pkg/lg"
-	"github.com/lab5e/loragw/pkg/gw"
 	"github.com/lab5e/lospan/pkg/congress"
 	"github.com/lab5e/lospan/pkg/pb/lospan"
 	"github.com/lab5e/lospan/pkg/server"
-	"github.com/lab5e/span/pkg/gateways/usergw/gwconfig"
+	"github.com/lab5e/spangw/pkg/gw"
+	"github.com/lab5e/spangw/pkg/lg"
+	"github.com/lab5e/spangw/pkg/stdgw"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -57,7 +57,7 @@ func (l *loraHandler) Shutdown() {
 }
 
 func (l *loraHandler) UpdateConfig(localID string, config map[string]string) (string, error) {
-	appEUI := config[gwconfig.LoraApplicationEUI]
+	appEUI := config[stdgw.LoraApplicationEUI]
 	// Configuration should contain the application EUI
 	if appEUI == "" {
 		return "", errors.New("missing application EUI from configuration")
@@ -131,7 +131,7 @@ func (l *loraHandler) createDevice(appEUI string, deviceEUI string, config map[s
 		return deviceEUI, nil, errors.New("application EUI is not set; cant create")
 	}
 
-	devEUI := config[gwconfig.LoraDeviceEUI]
+	devEUI := config[stdgw.LoraDeviceEUI]
 	newDevice := &lospan.Device{
 		ApplicationEui: &appEUI,
 	}
@@ -182,7 +182,7 @@ func (l *loraHandler) updateDevice(appEUI string, deviceEUI string, config map[s
 }
 
 func (l *loraHandler) configToDevice(device *lospan.Device, cfg map[string]string) error {
-	state, ok := cfg[gwconfig.LoraState]
+	state, ok := cfg[stdgw.LoraState]
 	if ok {
 		switch state {
 		case "otaa":
@@ -196,7 +196,7 @@ func (l *loraHandler) configToDevice(device *lospan.Device, cfg map[string]strin
 		}
 	}
 	if device.State == lospan.DeviceState_OTAA.Enum() {
-		appKey, ok := cfg[gwconfig.LoraAppKey]
+		appKey, ok := cfg[stdgw.LoraAppKey]
 		if ok && appKey != "" {
 			buf, err := hex.DecodeString(appKey)
 			if err != nil {
@@ -206,7 +206,7 @@ func (l *loraHandler) configToDevice(device *lospan.Device, cfg map[string]strin
 		}
 	}
 	if device.State == lospan.DeviceState_ABP.Enum() {
-		devAddr, ok := cfg[gwconfig.LoraDevAddr]
+		devAddr, ok := cfg[stdgw.LoraDevAddr]
 		if ok && devAddr != "" {
 			intAddr, err := strconv.ParseInt(devAddr, 16, 32)
 			if err != nil {
@@ -216,7 +216,7 @@ func (l *loraHandler) configToDevice(device *lospan.Device, cfg map[string]strin
 			device.DevAddr = &p
 		}
 
-		appSKey, ok := cfg[gwconfig.LoraAppSKey]
+		appSKey, ok := cfg[stdgw.LoraAppSKey]
 		if ok && appSKey != "" {
 			buf, err := hex.DecodeString(appSKey)
 			if err != nil {
@@ -224,7 +224,7 @@ func (l *loraHandler) configToDevice(device *lospan.Device, cfg map[string]strin
 			}
 			device.AppSessionKey = buf
 		}
-		nwkSKey, ok := cfg[gwconfig.LoraNwkSKey]
+		nwkSKey, ok := cfg[stdgw.LoraNwkSKey]
 		if ok && nwkSKey != "" {
 			buf, err := hex.DecodeString(nwkSKey)
 			if err != nil {
@@ -233,7 +233,7 @@ func (l *loraHandler) configToDevice(device *lospan.Device, cfg map[string]strin
 			device.NetworkSessionKey = buf
 		}
 	}
-	fcntUp, ok := cfg[gwconfig.LoraFCntUp]
+	fcntUp, ok := cfg[stdgw.LoraFCntUp]
 	if ok && fcntUp != "" {
 		fup, err := strconv.ParseInt(fcntUp, 10, 32)
 		if err != nil {
@@ -242,7 +242,7 @@ func (l *loraHandler) configToDevice(device *lospan.Device, cfg map[string]strin
 		p := int32(fup)
 		device.FrameCountUp = &p
 	}
-	fcntDn, ok := cfg[gwconfig.LoraFCntDn]
+	fcntDn, ok := cfg[stdgw.LoraFCntDn]
 	if ok && fcntDn != "" {
 		fdn, err := strconv.ParseInt(fcntDn, 10, 32)
 		if err != nil {
@@ -251,7 +251,7 @@ func (l *loraHandler) configToDevice(device *lospan.Device, cfg map[string]strin
 		p := int32(fdn)
 		device.FrameCountDown = &p
 	}
-	relaxedCounter, ok := cfg[gwconfig.LoraRelaxedCounter]
+	relaxedCounter, ok := cfg[stdgw.LoraRelaxedCounter]
 	if ok && relaxedCounter != "" {
 		rc := false
 		if relaxedCounter == "true" {
@@ -263,38 +263,38 @@ func (l *loraHandler) configToDevice(device *lospan.Device, cfg map[string]strin
 }
 
 func (l *loraHandler) deviceToConfig(device *lospan.Device, config map[string]string) {
-	config[gwconfig.LoraApplicationEUI] = device.GetApplicationEui()
+	config[stdgw.LoraApplicationEUI] = device.GetApplicationEui()
 	switch device.GetState() {
 	case lospan.DeviceState_ABP:
-		config[gwconfig.LoraState] = "abp"
+		config[stdgw.LoraState] = "abp"
 	case lospan.DeviceState_OTAA:
-		config[gwconfig.LoraState] = "otaa"
+		config[stdgw.LoraState] = "otaa"
 	default:
-		config[gwconfig.LoraState] = "disabled"
+		config[stdgw.LoraState] = "disabled"
 	}
 	if device.DevAddr != nil {
-		config[gwconfig.LoraDevAddr] = strconv.FormatInt(int64(*device.DevAddr), 16)
+		config[stdgw.LoraDevAddr] = strconv.FormatInt(int64(*device.DevAddr), 16)
 	}
 	if len(device.AppKey) > 0 {
-		config[gwconfig.LoraAppKey] = hex.EncodeToString(device.AppKey)
+		config[stdgw.LoraAppKey] = hex.EncodeToString(device.AppKey)
 	}
 	if len(device.AppSessionKey) > 0 {
-		config[gwconfig.LoraAppSKey] = hex.EncodeToString(device.AppSessionKey)
+		config[stdgw.LoraAppSKey] = hex.EncodeToString(device.AppSessionKey)
 	}
 	if len(device.NetworkSessionKey) > 0 {
-		config[gwconfig.LoraNwkSKey] = hex.EncodeToString(device.NetworkSessionKey)
+		config[stdgw.LoraNwkSKey] = hex.EncodeToString(device.NetworkSessionKey)
 	}
 	if device.FrameCountDown != nil {
-		config[gwconfig.LoraFCntDn] = strconv.FormatInt(int64(*device.FrameCountDown), 10)
+		config[stdgw.LoraFCntDn] = strconv.FormatInt(int64(*device.FrameCountDown), 10)
 	}
 	if device.FrameCountUp != nil {
-		config[gwconfig.LoraFCntUp] = strconv.FormatInt(int64(*device.FrameCountUp), 10)
+		config[stdgw.LoraFCntUp] = strconv.FormatInt(int64(*device.FrameCountUp), 10)
 	}
 	if device.RelaxedCounter != nil {
 		if *device.RelaxedCounter {
-			config[gwconfig.LoraRelaxedCounter] = "true"
+			config[stdgw.LoraRelaxedCounter] = "true"
 		} else {
-			config[gwconfig.LoraRelaxedCounter] = "false"
+			config[stdgw.LoraRelaxedCounter] = "false"
 		}
 	}
 }
@@ -325,12 +325,12 @@ func (l *loraHandler) createUpstreamReader(appEUI string) {
 		l.mutex.Unlock()
 		if l.upstreamCallback != nil {
 			metadata := make(map[string]string)
-			metadata[gwconfig.LoraGatewayEUI] = msg.GatewayEui
-			metadata[gwconfig.LoraRSSI] = strconv.FormatInt(int64(msg.Rssi), 10)
-			metadata[gwconfig.LoraSNR] = fmt.Sprintf("%3.2f", msg.Snr)
-			metadata[gwconfig.LoraFrequency] = fmt.Sprintf("%5.3f", msg.Snr)
-			metadata[gwconfig.LoraDataRate] = msg.DataRate
-			metadata[gwconfig.LoraDevAddr] = strconv.FormatInt(int64(msg.DevAddr), 16)
+			metadata[stdgw.LoraGatewayEUI] = msg.GatewayEui
+			metadata[stdgw.LoraRSSI] = strconv.FormatInt(int64(msg.Rssi), 10)
+			metadata[stdgw.LoraSNR] = fmt.Sprintf("%3.2f", msg.Snr)
+			metadata[stdgw.LoraFrequency] = fmt.Sprintf("%5.3f", msg.Snr)
+			metadata[stdgw.LoraDataRate] = msg.DataRate
+			metadata[stdgw.LoraDevAddr] = strconv.FormatInt(int64(msg.DevAddr), 16)
 			upstreamCB(msg.Eui, msg.Payload, metadata)
 		}
 	}
