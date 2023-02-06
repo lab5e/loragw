@@ -111,12 +111,14 @@ func (l *loraHandler) DownstreamMessage(localID, localDeviceID, messageID string
 		return errors.New("can't send downstream message with no EUI")
 	}
 	_, err := l.loraClient.SendMessage(ctx, &lospan.DownstreamMessage{
-		Eui:     localID,
+		Eui:     localDeviceID,
 		Payload: payload,
-		Port:    42,    // TODO: Allow port to be set via protocol
-		Ack:     false, // TODO: use ack flag for message
+		Port:    1,
+		Ack:     true,
 	})
-
+	if err != nil {
+		lg.Warning("Error sending downstream message for device %s: %v", localDeviceID, err)
+	}
 	return err
 }
 
