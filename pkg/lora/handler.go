@@ -98,7 +98,6 @@ func (l *loraHandler) RemoveDevice(localID string, deviceID string) error {
 }
 
 func (l *loraHandler) UpdateDevice(localID string, localDeviceID string, config map[string]string) (string, map[string]string, error) {
-	lg.Info("Updating device %s", localDeviceID)
 	if localDeviceID == "" {
 		return l.createDevice(localID, localDeviceID, config)
 	}
@@ -157,6 +156,7 @@ func (l *loraHandler) createDevice(appEUI string, deviceEUI string, config map[s
 		return deviceEUI, nil, err
 	}
 	l.deviceToConfig(createdDevice, config)
+	lg.Info("Created new device %s", createdDevice.Eui)
 	return *createdDevice.Eui, config, nil
 }
 
@@ -167,6 +167,8 @@ func (l *loraHandler) updateDevice(appEUI string, deviceEUI string, config map[s
 	if deviceEUI == "" {
 		return deviceEUI, nil, errors.New("device EUI not set; cant update")
 	}
+
+	lg.Info("Updating device %s", deviceEUI)
 	// TODO: Handle when deviceEUI != config[eui] and appEUI != config[appeui] (recreate device, move device)
 	ctx, done := context.WithTimeout(context.Background(), loraClientTimeout)
 	defer done()
