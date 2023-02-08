@@ -12,15 +12,17 @@ VOLUME /data
 ENV certfile=clientcert.crt
 ENV keyfile=private.key
 ENV chainfile=chain.crt
-ENV span_endpoint=
+ENV span_endpoint=gw.lab5e.com:6673
 ENV loglevel=info
 ENV forwarder_port=1680
 
-RUN /loragw \
+ARG TARGETARCH
+ADD bin/loragw.linux-${TARGETARCH} /loragw
+CMD /loragw \
         --log-level=${loglevel} \
-        --cert-file=${certfile} \
-		--chain=${chainfile} \
-		--key-file=${keyfile} \
+        --cert-file=/data/${certfile} \
+		--chain=/data/${chainfile} \
+		--key-file=/data/${keyfile} \
 		--lora-connection-string=/data/loragw.db  \
 		--lora-gateway-port=${forwarder_port} \
 		--lora-disable-gateway-checks \
