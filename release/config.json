@@ -1,0 +1,50 @@
+{
+    "sourceRoot": ".",
+    "name": "span_loragw",
+    "targets": [
+        "linux-arm",
+        "linux-arm64",
+        "linux-amd64",
+        "macos-arm64",
+        "macos-amd64",
+        "win-amd64"
+    ],
+    "files": [
+        {
+            "id": "loragw",
+            "name": "bin/loragw.linux-arm64",
+            "target": "linux-arm64"
+        },
+        {
+            "id": "loragw",
+            "name": "bin/loragw.linux-amd64",
+            "target": "linux-amd64"
+        },
+        {
+            "id": "loragw",
+            "name": "bin/loragw.linux-arm",
+            "target": "linux-arm"
+        },
+        {
+            "id": "loragw",
+            "name": "bin/loragw.macos-arm64",
+            "target": "macos-arm64"
+        },
+        {
+            "id": "loragw",
+            "name": "bin/loragw.macos-amd64",
+            "target": "macos-amd64"
+        },
+        {
+            "id": "loragw",
+            "name": "bin/loragw.exe",
+            "target": "win-amd64"
+        }
+    ],
+    "templates": [
+        {
+            "name": "changelog.md",
+            "action": "concatenate"
+        }
+    ]
+}
