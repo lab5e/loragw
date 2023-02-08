@@ -8,7 +8,10 @@ Create a gateway at https://span.lab5e.com/ and generate client certificates for
 
 Rename the client certificate to `clientcert.crt`, private key to `private.key` and certificate chain to `chain.crt` and place it in the current directory. 
 
-Run with `docker run -v $(pwd):/data lab5e/loragw:v1.0.1`
+Run with 
+```shell
+docker run -v $(pwd):/data lab5e/loragw
+```
 
 Add custom parameters with the `-e [name]=[value]` on the command line.
 

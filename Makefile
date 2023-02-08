@@ -38,7 +38,11 @@ arch: priv
 	
 dockerhub: arch
 # This requires a docker login up front (docker login --username=lab5e --email=stalehd@lab5e.com)
-	docker buildx build --platform linux/arm/v7,linux/arm64,linux/amd64 . --tag lab5e/loragw:v${VERSION} --push
+	docker buildx build \
+		--platform linux/arm/v7,linux/arm64,linux/amd64 . \
+		--tag lab5e/loragw:latest \
+		--tag lab5e/loragw:v${VERSION} \
+		--push
 
 rpi:
 	cd cmd/loragw && GOOS=linux GOARCH=arm go build -o ../../bin/loragw.rpi
