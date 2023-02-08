@@ -9,11 +9,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lab5e/l5log/pkg/lg"
 	"github.com/lab5e/lospan/pkg/congress"
 	"github.com/lab5e/lospan/pkg/pb/lospan"
 	"github.com/lab5e/lospan/pkg/server"
 	"github.com/lab5e/spangw/pkg/gw"
-	"github.com/lab5e/spangw/pkg/lg"
 	"github.com/lab5e/spangw/pkg/stdgw"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -22,9 +22,10 @@ import (
 const loraClientTimeout = time.Second * 1
 
 // New creates a new LoRa command handler for the gateway command processor
-func New(config *server.Parameters) (gw.CommandHandler, error) {
+func New(config *server.Parameters, defaultPort uint8) (gw.CommandHandler, error) {
 	ret := &loraHandler{
-		mutex: &sync.Mutex{},
+		mutex:       &sync.Mutex{},
+		defaultPort: defaultPort,
 	}
 	var err error
 	ret.loraServer, err = congress.NewLoRaServer(config)
@@ -41,7 +42,6 @@ func New(config *server.Parameters) (gw.CommandHandler, error) {
 		return nil, err
 	}
 	ret.loraClient = lospan.NewLospanClient(cc)
-
 	return ret, nil
 }
 
@@ -50,6 +50,7 @@ type loraHandler struct {
 	loraClient       lospan.LospanClient
 	upstreamCallback gw.UpstreamMessageFunc
 	mutex            *sync.Mutex
+	defaultPort      uint8
 }
 
 func (l *loraHandler) Shutdown() {
@@ -62,8 +63,7 @@ func (l *loraHandler) UpdateConfig(localID string, config map[string]string) (st
 	if appEUI == "" {
 		return "", errors.New("missing application EUI from configuration")
 	}
-
-	// TODO: Handle if local ID != appEUI (field has changed)
+	lg.Info("Updating gateway config with application EUI: %s", appEUI)
 
 	if localID == "" {
 		// This is a new application. Add it to the server
@@ -87,6 +87,7 @@ func (l *loraHandler) RemoveDevice(localID string, deviceID string) error {
 	ctx, done := context.WithTimeout(context.Background(), loraClientTimeout)
 	defer done()
 
+	lg.Info("Removing device %s", deviceID)
 	_, err := l.loraClient.DeleteDevice(ctx, &lospan.DeleteDeviceRequest{
 		Eui: localID,
 	})
@@ -97,6 +98,7 @@ func (l *loraHandler) RemoveDevice(localID string, deviceID string) error {
 }
 
 func (l *loraHandler) UpdateDevice(localID string, localDeviceID string, config map[string]string) (string, map[string]string, error) {
+	lg.Info("Updating device %s", localDeviceID)
 	if localDeviceID == "" {
 		return l.createDevice(localID, localDeviceID, config)
 	}
@@ -110,10 +112,12 @@ func (l *loraHandler) DownstreamMessage(localID, localDeviceID, messageID string
 	if localID == "" {
 		return errors.New("can't send downstream message with no EUI")
 	}
+
+	lg.Info("Sending confirmed message to %s (%d bytes) on port %d", localDeviceID, len(payload), l.defaultPort)
 	_, err := l.loraClient.SendMessage(ctx, &lospan.DownstreamMessage{
 		Eui:     localDeviceID,
 		Payload: payload,
-		Port:    1,
+		Port:    int32(l.defaultPort),
 		Ack:     true,
 	})
 	if err != nil {
@@ -333,6 +337,7 @@ func (l *loraHandler) createUpstreamReader(appEUI string) {
 			metadata[stdgw.LoraFrequency] = fmt.Sprintf("%5.3f", msg.Snr)
 			metadata[stdgw.LoraDataRate] = msg.DataRate
 			metadata[stdgw.LoraDevAddr] = strconv.FormatInt(int64(msg.DevAddr), 16)
+			lg.Info("Sending upstream message from %s to Span (%d bytes)", msg.Eui, len(msg.Payload))
 			upstreamCB(msg.Eui, msg.Payload, metadata)
 		}
 	}

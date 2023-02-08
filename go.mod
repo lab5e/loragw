@@ -4,7 +4,8 @@ go 1.19
 
 require (
 	github.com/alecthomas/kong v0.7.1
-	github.com/lab5e/lospan v0.0.0-00010101000000-000000000000
+	github.com/lab5e/l5log v0.0.11
+	github.com/lab5e/lospan v0.10.0
 	github.com/lab5e/spangw v0.0.3
 	google.golang.org/grpc v1.52.3
 )
@@ -36,4 +37,4 @@ require (
 
 //replace github.com/lab5e/spangw => ../spangw
 
-replace github.com/lab5e/lospan => ../lospan
+//replace github.com/lab5e/lospan => ../lospan
