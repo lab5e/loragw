@@ -156,7 +156,7 @@ func (l *loraHandler) createDevice(appEUI string, deviceEUI string, config map[s
 		return deviceEUI, nil, err
 	}
 	l.deviceToConfig(createdDevice, config)
-	lg.Info("Created new device %s", createdDevice.Eui)
+	lg.Info("Created new device %s", *createdDevice.Eui)
 	return *createdDevice.Eui, config, nil
 }
 
