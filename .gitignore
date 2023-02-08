@@ -1,5 +1,5 @@
 bin/
-cmd/loragw/loragw
 *.crt
 *.key
-
+loragw.db
+state.json
