@@ -6,7 +6,7 @@ require (
 	github.com/alecthomas/kong v0.7.1
 	github.com/lab5e/l5log v0.0.11
 	github.com/lab5e/lospan v0.10.0
-	github.com/lab5e/spangw v0.0.3
+	github.com/lab5e/spangw v0.0.4
 	google.golang.org/grpc v1.52.3
 )
 
