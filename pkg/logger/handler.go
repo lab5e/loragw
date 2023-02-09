@@ -47,5 +47,4 @@ func (l *logger) UpstreamMessage(upstreamCb gw.UpstreamMessageFunc) {
 }
 
 func (l *logger) Shutdown() {
-	l.h.Shutdown()
 }
