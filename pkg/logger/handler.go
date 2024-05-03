@@ -1,7 +1,8 @@
 package logger
 
 import (
-	"github.com/lab5e/l5log/pkg/lg"
+	"log/slog"
+
 	"github.com/lab5e/spangw/pkg/gw"
 )
 
@@ -15,30 +16,30 @@ type logger struct {
 }
 
 func (l *logger) UpdateConfig(localID string, config map[string]string) (string, error) {
-	lg.Debug("In: ID: %s  config=%+v", localID, config)
+	slog.Debug("UpdateConfig In", "id", localID, "config", config)
 	ret, err := l.h.UpdateConfig(localID, config)
-	lg.Debug("Out: ID: %s: error: %v", ret, err)
+	slog.Debug("UpdateConfig Out", "id", ret, "error", err)
 	return ret, err
 }
 
 func (l *logger) RemoveDevice(localID string, deviceID string) error {
-	lg.Debug("In: ID: %s  deviceID: %s", localID, deviceID)
+	slog.Debug("RemoveDevice In", "id", localID, "deviceID", deviceID)
 	err := l.h.RemoveDevice(localID, deviceID)
-	lg.Debug("Out: error: %v", err)
+	slog.Debug("RemoveDevice Out", "error", err)
 	return err
 }
 
 func (l *logger) UpdateDevice(localID string, localDeviceID string, config map[string]string) (string, map[string]string, error) {
-	lg.Debug("In: ID: %s,  LocalID: %s   config=%+v", localID, localDeviceID, config)
+	slog.Debug("in", localID, "localID", localDeviceID, "config")
 	ret, res, err := l.h.UpdateDevice(localID, localDeviceID, config)
-	lg.Debug("Out: ID: %s  config: %+v  err: %v", ret, res, err)
+	slog.Debug("Out: ID: %s  config: %+v  err: %v", ret, res, err)
 	return ret, res, err
 }
 
 func (l *logger) DownstreamMessage(localID, localDeviceID, messageID string, payload []byte) error {
-	lg.Debug("In: ID: %s  deviceID: %s  messageID: %s  payload: %d bytes", localID, localDeviceID, messageID, len(payload))
+	slog.Debug("Downstream In", "id", localID, "deviceID", localDeviceID, "messageID", messageID, "payloadLen", len(payload))
 	err := l.h.DownstreamMessage(localID, localDeviceID, messageID, payload)
-	lg.Debug("Out:  error: %v", err)
+	slog.Debug("Downstream Out", "error", err)
 	return err
 }
 

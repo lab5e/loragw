@@ -5,11 +5,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"sync"
 	"time"
 
-	"github.com/lab5e/l5log/pkg/lg"
 	"github.com/lab5e/lospan/pkg/congress"
 	"github.com/lab5e/lospan/pkg/pb/lospan"
 	"github.com/lab5e/lospan/pkg/server"
@@ -63,7 +63,7 @@ func (l *loraHandler) UpdateConfig(localID string, config map[string]string) (st
 	if appEUI == "" {
 		return "", errors.New("missing application EUI from configuration")
 	}
-	lg.Info("Updating gateway config with application EUI: %s", appEUI)
+	slog.Info("Updating gateway config with application EUI", "appEUI", appEUI)
 
 	if localID == "" {
 		// This is a new application. Add it to the server
@@ -87,12 +87,12 @@ func (l *loraHandler) RemoveDevice(localID string, deviceID string) error {
 	ctx, done := context.WithTimeout(context.Background(), loraClientTimeout)
 	defer done()
 
-	lg.Info("Removing device %s", deviceID)
+	slog.Info("Removing device", "deviceID", deviceID)
 	_, err := l.loraClient.DeleteDevice(ctx, &lospan.DeleteDeviceRequest{
 		Eui: localID,
 	})
 	if err != nil {
-		lg.Warning("Device %s does not exist; not removed: %v", localID, err)
+		slog.Warn("Device does not exist; not removed", "localID", localID, "error", err)
 	}
 	return nil
 }
@@ -112,7 +112,7 @@ func (l *loraHandler) DownstreamMessage(localID, localDeviceID, messageID string
 		return errors.New("can't send downstream message with no EUI")
 	}
 
-	lg.Info("Sending confirmed message to %s (%d bytes) on port %d", localDeviceID, len(payload), l.defaultPort)
+	slog.Info("Sending confirmed message", "localDeviceID", localDeviceID, "port", l.defaultPort, "payloadLength", len(payload))
 	_, err := l.loraClient.SendMessage(ctx, &lospan.DownstreamMessage{
 		Eui:     localDeviceID,
 		Payload: payload,
@@ -120,7 +120,7 @@ func (l *loraHandler) DownstreamMessage(localID, localDeviceID, messageID string
 		Ack:     true,
 	})
 	if err != nil {
-		lg.Warning("Error sending downstream message for device %s: %v", localDeviceID, err)
+		slog.Warn("Error sending downstream message for device", "deviceId", localDeviceID, "error", err)
 	}
 	return err
 }
@@ -156,7 +156,7 @@ func (l *loraHandler) createDevice(appEUI string, deviceEUI string, config map[s
 		return deviceEUI, nil, err
 	}
 	l.deviceToConfig(createdDevice, config)
-	lg.Info("Created new device %s", *createdDevice.Eui)
+	slog.Info("Created new device", "deviceEUI", *createdDevice.Eui)
 	return *createdDevice.Eui, config, nil
 }
 
@@ -168,7 +168,7 @@ func (l *loraHandler) updateDevice(appEUI string, deviceEUI string, config map[s
 		return deviceEUI, nil, errors.New("device EUI not set; cant update")
 	}
 
-	lg.Info("Updating device %s", deviceEUI)
+	slog.Info("Updating device", "deviceEUI", deviceEUI)
 	// TODO: Handle when deviceEUI != config[eui] and appEUI != config[appeui] (recreate device, move device)
 	ctx, done := context.WithTimeout(context.Background(), loraClientTimeout)
 	defer done()
@@ -318,13 +318,13 @@ func (l *loraHandler) createUpstreamReader(appEUI string) {
 		Eui: appEUI,
 	})
 	if err != nil {
-		lg.Warning("Error opening upstream message stream for app %s: %v", appEUI, err)
+		slog.Warn("Error opening upstream message stream for app", "appEUI", appEUI, "error", err)
 	}
 	defer streamClient.CloseSend()
 	for {
 		msg, err := streamClient.Recv()
 		if err != nil {
-			lg.Warning("Error reading upstream messages for app %s. Exiting: %v", appEUI, err)
+			slog.Warn("Error reading upstream messages for app. Exiting", "appEUI", appEUI, "error", err)
 			return
 		}
 		var upstreamCB gw.UpstreamMessageFunc
@@ -339,7 +339,7 @@ func (l *loraHandler) createUpstreamReader(appEUI string) {
 			metadata[stdgw.LoraFrequency] = fmt.Sprintf("%5.3f", msg.Snr)
 			metadata[stdgw.LoraDataRate] = msg.DataRate
 			metadata[stdgw.LoraDevAddr] = strconv.FormatInt(int64(msg.DevAddr), 16)
-			lg.Info("Sending upstream message from %s to Span (%d bytes)", msg.Eui, len(msg.Payload))
+			slog.Info("Sending upstream message to Span", "deviceEUI", msg.Eui, "payloadLen", len(msg.Payload))
 			upstreamCB(msg.Eui, msg.Payload, metadata)
 		}
 	}
