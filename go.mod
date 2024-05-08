@@ -7,7 +7,7 @@ toolchain go1.22.0
 require (
 	github.com/alecthomas/kong v0.7.1
 	github.com/lab5e/lospan v0.11.0
-	github.com/lab5e/spangw v0.0.5
+	github.com/lab5e/spangw v0.0.6
 	google.golang.org/grpc v1.63.2
 )
 
